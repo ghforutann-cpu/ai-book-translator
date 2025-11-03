@@ -3,3 +3,6 @@ pypdf
 faiss-cpu
 numpy
 google-generativeai
+python-docx
+
+
