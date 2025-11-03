@@ -23,7 +23,7 @@ else:
     st.stop()
 
 EMBEDDING_MODEL = "models/text-embedding-004"
-GENERATION_MODEL = "models/gemini-2.0-pro"
+GENERATION_MODEL = "models/gemini-2.5-pro"
 ARTIFACTS_DIR = Path("rag_artifacts")
 ARTIFACTS_DIR.mkdir(exist_ok=True)
 
@@ -117,3 +117,4 @@ if uploaded_pdf:
             st.subheader("🇮🇷 ترجمه فارسی:")
             translated_text = translate_with_gemini(page_text)
             st.text_area("Persian Translation", translated_text, height=300)
+
