@@ -5,6 +5,8 @@ import numpy as np
 import faiss
 from pathlib import Path
 from pypdf import PdfReader
+from io import BytesIO
+from docx import Document
 import google.generativeai as genai
 
 # ======================
@@ -53,15 +55,15 @@ def build_index_from_pages(pages):
     if not texts:
         st.warning("هیچ متنی برای embedding پیدا نشد.")
         return
-    st.info(f"در حال تولید embedding برای {len(texts)} صفحه ...")
-    vectors = embed_texts_google(texts)
-    faiss.normalize_L2(vectors)
-    dim = vectors.shape[1]
-    index = faiss.IndexFlatIP(dim)
-    index.add(vectors)
-    faiss.write_index(index, str(ARTIFACTS_DIR / "index.faiss"))
-    with open(ARTIFACTS_DIR / "metadata.pkl", "wb") as f:
-        pickle.dump(pages, f)
+    with st.spinner(f"در حال تولید embedding برای {len(texts)} صفحه ..."):
+        vectors = embed_texts_google(texts)
+        faiss.normalize_L2(vectors)
+        dim = vectors.shape[1]
+        index = faiss.IndexFlatIP(dim)
+        index.add(vectors)
+        faiss.write_index(index, str(ARTIFACTS_DIR / "index.faiss"))
+        with open(ARTIFACTS_DIR / "metadata.pkl", "wb") as f:
+            pickle.dump(pages, f)
     st.success("✅ ایندکس ساخته و ذخیره شد.")
 
 def get_page_text(filename, page_num):
@@ -80,13 +82,22 @@ def translate_with_gemini(text):
     if not text.strip():
         return "صفحه خالی است."
     system_prompt = (
-        "شما یک مترجم حرفه‌ای در زمینه یادگیری ماشین و مهندسی هستید. "
-        "اگر قطعه کدی در متن وجود دارد، آن را همان‌طور که هست نگه دارید. "
-        "متن انگلیسی را به فارسی روان و دقیق ترجمه کنید."
+        "شما یک مترجم حرفه‌ای در حوزه یادگیری ماشین و مهندسی هستید. "
+        "اگر قطعه کدی در متن وجود دارد، آن را بدون تغییر نگه دارید. "
+        "فقط متن را به فارسی دقیق و روان ترجمه کن و هیچ چیز دیگری به ابتدا یا انتهای متن اضافه نکن. "
+        "از درج توضیحات اضافی یا نشانه‌هایی مانند ** یا * خودداری کن."
     )
     model = genai.GenerativeModel(GENERATION_MODEL)
     response = model.generate_content([system_prompt, text])
     return response.text.strip()
+
+def create_word_file(text, filename="translation.docx"):
+    doc = Document()
+    doc.add_paragraph(text)
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 # ======================
 # 🎨 رابط کاربری Streamlit
@@ -95,12 +106,12 @@ def translate_with_gemini(text):
 uploaded_pdf = st.file_uploader("📤 یک فایل PDF آپلود کن", type=["pdf"])
 
 if uploaded_pdf:
+    # استخراج صفحات
     pages = extract_pages_from_pdf(uploaded_pdf)
     st.success(f"✅ {len(pages)} صفحه از فایل استخراج شد.")
-    
-    # ساخت ایندکس
-    if st.button("🔍 ساخت ایندکس برای فایل"):
-        build_index_from_pages(pages)
+
+    # ساخت ایندکس به‌صورت خودکار
+    build_index_from_pages(pages)
 
     # انتخاب صفحه
     page_numbers = [p["page"] for p in pages]
@@ -115,6 +126,17 @@ if uploaded_pdf:
             st.text_area("Original Text", page_text, height=200)
 
             st.subheader("🇮🇷 ترجمه فارسی:")
-            translated_text = translate_with_gemini(page_text)
+
+            with st.spinner("⏳ در حال ترجمه توسط هوش مصنوعی..."):
+                translated_text = translate_with_gemini(page_text)
+
             st.text_area("Persian Translation", translated_text, height=300)
 
+            # ایجاد فایل Word برای دانلود
+            word_buffer = create_word_file(translated_text, f"page_{selected_page}_translation.docx")
+            st.download_button(
+                label="📥 دانلود ترجمه به صورت Word",
+                data=word_buffer,
+                file_name=f"page_{selected_page}_translation.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
